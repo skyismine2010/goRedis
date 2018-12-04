@@ -2,12 +2,6 @@ package goRedis
 
 import "fmt"
 
-type redisDB struct {
-	dbDict      map[string]interface{}
-	expiresDict map[string]interface{}
-	//todo 这里需要做的东西还有很多，先暂时这样
-}
-
 func initRedisDb(server *redisServer) error {
 	server.dbNum = 1 //todo
 
@@ -19,4 +13,10 @@ func initRedisDb(server *redisServer) error {
 	}
 	fmt.Printf("Init Go Redis DB success.\n")
 	return nil
+}
+
+type redisDB struct {
+	dbDict      map[string]interface{}
+	expiresDict map[string]interface{}
+	//todo 这里需要做的东西还有很多，先暂时这样
 }

@@ -2,16 +2,19 @@ package goRedis
 
 import "fmt"
 
-func addReplyMultiBulkLen(str *string, length int64) {
-	*str += fmt.Sprintf("*%d\r\n", length)
+func addReplyMultiBulkLen(length int64) *string {
+	ret := fmt.Sprintf("*%d\r\n", length)
+	return &ret
 }
 
-func addReplyBulkCString(str *string, subStr *string) {
-	*str += fmt.Sprintf("$%d\r\n%s\r\n", len(*subStr), *subStr)
+func addReplyBulkCString(subStr *string) *string {
+	ret := fmt.Sprintf("$%d\r\n%s\r\n", len(*subStr), *subStr)
+	return &ret
 }
 
-func addReplyint64(str *string, length int64) {
-	*str += fmt.Sprintf(":%d\r\n", length)
+func addReplyInt64(length int64) *string {
+	ret := fmt.Sprintf(":%d\r\n", length)
+	return &ret
 }
 
 func addReplyCommandFlag(str *string, cmd *redisCommand, cmdFlag int32, cmdFlagStr string) int {

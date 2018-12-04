@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type redisClient struct {
 	createTime      time.Time //todo
 	addrInfo        string
-	db              *redisDB
+	db              *redisDB // 当前使用的db
 	cmd             *redisCommand
 	lastInterAction time.Duration
 	ackChan         chan string
@@ -26,7 +27,7 @@ type redisReq struct {
 	client *redisClient
 }
 
-type cmdProc func(req *redisReq)
+type cmdProcess func(req *redisReq)
 
 type redisServer struct {
 	reqChan chan *redisReq
@@ -35,20 +36,20 @@ type redisServer struct {
 }
 
 type redisObj struct {
-	rtype     int8
+	rType     int8
 	rEncoding int8
 	value     interface{}
 }
 
 type redisCommand struct {
-	proc        cmdProc
+	process     cmdProcess
 	arity       int
-	sflags      string
+	sFlags      string
 	flags       int32
 	firstKey    int
 	lastKey     int
 	keyStep     int
-	microsecend int64
+	microsecond int64
 	calls       int64
 }
 
@@ -71,12 +72,18 @@ const CMD_FAST = int32(1 << 13)              /* "F" flag */
 const CMD_MODULE_GETKEYS = int32(1 << 14)    /* Use the modules getkeys interface. */
 const CMD_MODULE_NO_CLUSTER = int32(1 << 15) /* Deny on Redis Cluster. */
 
+var ReplyOK = "+OK\r\n"
+var ReplyErr = "-ERR\r\n"
+var ReplyEmptyBulk = "$0\r\n\r\n"
+var ReplyNoBulk = "$-1\r\n"
+
 var redisCommandTable map[string]*redisCommand
 
 func init() {
 	redisCommandTable = map[string]*redisCommand{
-		"COMMAND": &redisCommand{cmdCommandHandler, 0, "ltR", 1, 1, 1, 0, 0, 0},
-		"SET":     &redisCommand{cmdSetHandler, -3, "wm", 1, 1, 1, 0, 0, 0},
+		"command": &redisCommand{cmdCommandHandler, 0, "ltR", 1, 1, 1, 0, 0, 0},
+		"set":     &redisCommand{cmdSetHandler, 3, "wm", 1, 1, 1, 0, 0, 0},
+		"get":     &redisCommand{cmdGetHandler, 2, "rF", 1, 1, 1, 0, 0, 0},
 	}
 }
 
@@ -101,15 +108,15 @@ func recvClientReq(client *redisClient) error {
 			text := client.scanner.Text()
 			if i%2 == 0 {
 				if text[0] != '$' {
-					return fmt.Errorf("Client Format Error. text=%s", text)
+					return fmt.Errorf("client format error. text=%s", text)
 				}
 				frameLen, err = strconv.Atoi(text[1:])
 				if err != nil {
-					return fmt.Errorf("Client Format Error, text=%s", text)
+					return fmt.Errorf("client format error, text=%s", text)
 				}
 			} else {
 				if frameLen == 0 || len(text) != frameLen {
-					return fmt.Errorf("Client Format Error, text=%s", text)
+					return fmt.Errorf("client format error, text=%s", text)
 				} else {
 					client.argv = append(client.argv, text)
 				}
@@ -189,7 +196,7 @@ func listenAndServe(ip string, port int) error {
 	for true {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("Can't accept client socket, err=%v", err)
+			fmt.Println("can't accept client socket, err=%v", err)
 			continue
 		}
 		fmt.Printf("accept conn, remote info = %v\n", conn.RemoteAddr())
@@ -205,22 +212,19 @@ func cmdCommandHandler(req *redisReq) {
 	for cmdName, cmd := range redisCommandTable {
 		flagCount := 0
 
-		addReplyMultiBulkLen(&ackStr, 6) // 这个是固定的后面有6个
-		addReplyBulkCString(&ackStr, &cmdName)
-		addReplyint64(&ackStr, int64(cmd.arity))
-
-		ackStr = addReplyCommand(flagCount, cmd, ackStr)
-
-		addReplyint64(&ackStr, int64(cmd.firstKey))
-		addReplyint64(&ackStr, int64(cmd.lastKey))
-		addReplyint64(&ackStr, int64(cmd.keyStep))
-
+		ackStr += *(addReplyMultiBulkLen(6)) // 这个是固定的后面有6个
+		ackStr += *(addReplyBulkCString(&cmdName))
+		ackStr += *(addReplyInt64(int64(cmd.arity)))
+		ackStr += *(addReplyCommand(flagCount, cmd))
+		ackStr += *(addReplyInt64(int64(cmd.firstKey)))
+		ackStr += *(addReplyInt64(int64(cmd.lastKey)))
+		ackStr += *(addReplyInt64(int64(cmd.keyStep)))
 	}
 	fmt.Printf("Send [Command] Ack = %s", ackStr)
 	replyRedisAck(req.client, &ackStr)
 }
 
-func addReplyCommand(flagCount int, cmd *redisCommand, ackStr string) string {
+func addReplyCommand(flagCount int, cmd *redisCommand) *string {
 	var flagBuff string
 	flagCount += addReplyCommandFlag(&flagBuff, cmd, CMD_WRITE, "write")
 	flagCount += addReplyCommandFlag(&flagBuff, cmd, CMD_READONLY, "readonly")
@@ -235,14 +239,14 @@ func addReplyCommand(flagCount int, cmd *redisCommand, ackStr string) string {
 	flagCount += addReplyCommandFlag(&flagBuff, cmd, CMD_SKIP_MONITOR, "skip_monitor")
 	flagCount += addReplyCommandFlag(&flagBuff, cmd, CMD_ASKING, "asking")
 	flagCount += addReplyCommandFlag(&flagBuff, cmd, CMD_FAST, "fast")
-	addReplyMultiBulkLen(&ackStr, int64(flagCount))
-	ackStr += flagBuff
-	return ackStr
+	ret := *(addReplyMultiBulkLen(int64(flagCount)))
+	ret += flagBuff
+	return &ret
 }
 
 func initRedisCmdTable() error {
 	for k, _ := range redisCommandTable {
-		for _, ch := range redisCommandTable[k].sflags {
+		for _, ch := range redisCommandTable[k].sFlags {
 			switch ch {
 			case 'w':
 				redisCommandTable[k].flags |= CMD_WRITE
@@ -299,7 +303,7 @@ func serverMainLoop() {
 }
 
 func serverMsgHandler(req *redisReq) {
-	cmdName := req.client.argv[0]
+	cmdName := strings.ToLower(req.client.argv[0])
 	cmd, ok := redisCommandTable[cmdName]
 	if !ok {
 		replyErrorFormat(req, "unknown command `%s`", cmdName)
@@ -312,7 +316,7 @@ func serverMsgHandler(req *redisReq) {
 		return
 	}
 
-	cmd.proc(req)
+	cmd.process(req)
 }
 
 func StartServer() {
