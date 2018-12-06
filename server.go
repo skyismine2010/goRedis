@@ -30,15 +30,17 @@ type redisReq struct {
 type cmdProcess func(req *redisReq)
 
 type redisServer struct {
-	reqChan chan *redisReq
-	dbNum   int
-	db      []redisDB
+	reqChan   chan *redisReq
+	dbNum     int
+	db        []redisDB
+	loopTimer *time.Ticker
 }
 
 type redisObj struct {
-	rType     int8
-	rEncoding int8
-	value     interface{}
+	rType    int8 //redis类型
+	encoding int8 //内部存储类型
+	value    interface{}
+	ttl      time.Time
 }
 
 type redisCommand struct {
@@ -54,6 +56,8 @@ type redisCommand struct {
 }
 
 var server redisServer
+
+const ActiveExpireCycleLookupsPerLoop = 20
 
 const CMD_WRITE = int32(1 << 0)              /* "w" flag */
 const CMD_READONLY = int32(1 << 1)           /* "r" flag */
@@ -72,10 +76,21 @@ const CMD_FAST = int32(1 << 13)              /* "F" flag */
 const CMD_MODULE_GETKEYS = int32(1 << 14)    /* Use the modules getkeys interface. */
 const CMD_MODULE_NO_CLUSTER = int32(1 << 15) /* Deny on Redis Cluster. */
 
+const ObjString = int8(0)
+const ObjList = int(1)
+const ObjSet = int(2)
+const ObjZSet = int(3)
+const ObjHash = int(4)
+
+const ObjEncodingStr = int8(0)
+const ObjEncodingINT = int8(1)
+const ObjEncodingHT = int8(2)
+
 var ReplyOK = "+OK\r\n"
 var ReplyErr = "-ERR\r\n"
 var ReplyEmptyBulk = "$0\r\n\r\n"
-var ReplyNoBulk = "$-1\r\n"
+var ReplyNullBulk = "$-1\r\n"
+var ReplySyntaxErr = "-ERR syntax error\r\n"
 
 var redisCommandTable map[string]*redisCommand
 
@@ -289,6 +304,7 @@ func initServer() error {
 	}
 
 	initRedisDb(&server)
+	server.loopTimer = time.NewTicker(time.Millisecond)
 
 	return nil
 }
@@ -298,6 +314,8 @@ func serverMainLoop() {
 		select {
 		case redisReq := <-server.reqChan:
 			serverMsgHandler(redisReq)
+		case <-server.loopTimer.C:
+			timerHandler()
 		}
 	}
 }
