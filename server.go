@@ -17,7 +17,7 @@ type redisClient struct {
 	lastInterAction time.Duration
 	ackChan         chan string
 	argc            int
-	argv            []string
+	argv            []*string
 	conn            net.Conn
 	scanner         *bufio.Scanner
 	writer          *bufio.Writer
@@ -35,6 +35,17 @@ type redisServer struct {
 	db        []redisDB
 	loopTimer *time.Ticker
 }
+
+const ObjString = int8(0)
+const ObjList = int8(1)
+const ObjSet = int8(2)
+const ObjZSet = int8(3)
+const ObjHash = int8(4)
+
+const ObjEncodingStr = int8(0)
+const ObjEncodingINT = int8(1)
+const ObjEncodingHT = int8(2)
+const ObjEncodingList = int8(3)
 
 type redisObj struct {
 	rType    int8 //redis类型
@@ -76,21 +87,13 @@ const CMD_FAST = int32(1 << 13)              /* "F" flag */
 const CMD_MODULE_GETKEYS = int32(1 << 14)    /* Use the modules getkeys interface. */
 const CMD_MODULE_NO_CLUSTER = int32(1 << 15) /* Deny on Redis Cluster. */
 
-const ObjString = int8(0)
-const ObjList = int(1)
-const ObjSet = int(2)
-const ObjZSet = int(3)
-const ObjHash = int(4)
-
-const ObjEncodingStr = int8(0)
-const ObjEncodingINT = int8(1)
-const ObjEncodingHT = int8(2)
-
 var ReplyOK = "+OK\r\n"
 var ReplyErr = "-ERR\r\n"
 var ReplyEmptyBulk = "$0\r\n\r\n"
 var ReplyNullBulk = "$-1\r\n"
+var ReplyEmptyMultiBulk = "*0\r\n"
 var ReplySyntaxErr = "-ERR syntax error\r\n"
+var ReplyWrongTypeErr = "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"
 
 var redisCommandTable map[string]*redisCommand
 
@@ -99,10 +102,14 @@ func init() {
 		"command": &redisCommand{cmdCommandHandler, 0, "ltR", 1, 1, 1, 0, 0, 0},
 		"set":     &redisCommand{cmdSetHandler, 3, "wm", 1, 1, 1, 0, 0, 0},
 		"get":     &redisCommand{cmdGetHandler, 2, "rF", 1, 1, 1, 0, 0, 0},
+		"lpush":   &redisCommand{cmdLPushHandler, 3, "wmF", 1, 1, 1, 0, 0, 0},
+		"rpush":   &redisCommand{cmdRPushHandler, 3, "wmF", 1, 1, 1, 0, 0, 0},
+		"llen":    &redisCommand{cmdLLenHandler, 2, "rF", 0, 1, 1, 1, 0, 0},
+		"lrange":  &redisCommand{cmdLRangeHandler, 2, "rF", 0, 1, 1, 1, 0, 0},
 	}
 }
 
-func recvClientReq(client *redisClient) error {
+func receiveClientReq(client *redisClient) error {
 	var err error
 
 	if client.scanner.Scan() {
@@ -133,7 +140,7 @@ func recvClientReq(client *redisClient) error {
 				if frameLen == 0 || len(text) != frameLen {
 					return fmt.Errorf("client format error, text=%s", text)
 				} else {
-					client.argv = append(client.argv, text)
+					client.argv = append(client.argv, &text)
 				}
 				frameLen = 0
 			}
@@ -166,13 +173,12 @@ func clientConnHandler(conn net.Conn) {
 	var client redisClient
 	initClient(conn, &client)
 	for {
-		err := recvClientReq(&client)
+		err := receiveClientReq(&client)
 		if err != nil || client.argc == 0 || client.argc != len(client.argv) {
 			fmt.Printf("error receivce message, err=%v, client.argc=%d", err, client.argc)
 			return
 		}
-		fmt.Printf("redis client receive argc  = %d, argv=%v client = %v\n",
-			client.argc, client.argv, conn.RemoteAddr())
+		//fmt.Printf("redis client receive argc  = %d, argv=%v client = %v\n", client.argc, client.argv, conn.RemoteAddr())
 
 		sendReqToRedisServer(&client)
 
@@ -236,7 +242,7 @@ func cmdCommandHandler(req *redisReq) {
 		ackStr += *(addReplyInt64(int64(cmd.keyStep)))
 	}
 	fmt.Printf("Send [Command] Ack = %s", ackStr)
-	replyRedisAck(req.client, &ackStr)
+	replyRedisAck(req, &ackStr)
 }
 
 func addReplyCommand(flagCount int, cmd *redisCommand) *string {
@@ -290,7 +296,7 @@ func initRedisCmdTable() error {
 			case 'F':
 				redisCommandTable[k].flags |= CMD_FAST
 			default:
-				return fmt.Errorf("Unsupported command flag")
+				return fmt.Errorf("unsupported command flag")
 			}
 		}
 	}
@@ -321,7 +327,7 @@ func serverMainLoop() {
 }
 
 func serverMsgHandler(req *redisReq) {
-	cmdName := strings.ToLower(req.client.argv[0])
+	cmdName := strings.ToLower(*req.client.argv[0])
 	cmd, ok := redisCommandTable[cmdName]
 	if !ok {
 		replyErrorFormat(req, "unknown command `%s`", cmdName)

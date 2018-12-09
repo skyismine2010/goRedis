@@ -18,11 +18,11 @@ func cmdSetHandler(req *redisReq) {
 
 	for i := 3; i < req.client.argc; i++ {
 		var a, next *string
-		a = &req.client.argv[i]
+		a = req.client.argv[i]
 		if i == req.client.argc-1 {
 			next = nil
 		} else {
-			next = &req.client.argv[i+1]
+			next = req.client.argv[i+1]
 		}
 		if ((*a)[0] == 'n' || (*a)[0] == 'N') &&
 			((*a)[1] == 'x' || (*a)[1] == 'X') &&
@@ -47,7 +47,7 @@ func cmdSetHandler(req *redisReq) {
 			expire = next
 			i++
 		} else {
-			replyRedisAck(req.client, &ReplySyntaxErr)
+			replyRedisAck(req, &ReplySyntaxErr)
 			return
 		}
 	}
@@ -60,7 +60,7 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	var err error
 	k := req.client.argv[1]
 	v := req.client.argv[2]
-	fmt.Printf("Set k=%s, v=%s\n", k, v)
+	//fmt.Printf("Set k=%s, v=%s\n", k, v)
 
 	if expireStr != nil {
 		expire, err = strconv.Atoi(*expireStr)
@@ -76,36 +76,58 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	now := time.Now()
 
 	ttl := now.Add(time.Duration(expire) * time.Millisecond)
-	fmt.Printf("now = %s, ttl=%s\n", time.Now().String(), ttl.String())
+	fmt.Printf("set key = %s, now = %s, ttl=%s\n", k, time.Now().String(), ttl.String())
 
-	obj := &redisObj{ObjString, ObjEncodingStr, v, ttl}
+	obj := str2Obj(v, &ttl)
 
-	_, exist := req.client.db.dbDict[k]
+	_, exist := req.client.db.dbDict[*k]
 	if (exist && (flags&ObjSetNX) != 0) ||
 		(!exist && (flags&ObjSetXX) != 0) {
-		replyRedisAck(req.client, &ReplyNullBulk)
+		replyRedisAck(req, &ReplyNullBulk)
 		return
 	}
 
 	if expireStr != nil {
-		req.client.db.expiresDict[k] = obj
+		req.client.db.expiresDict[*k] = obj
 	}
-	req.client.db.dbDict[k] = obj
-	replyRedisAck(req.client, &ReplyOK)
+	req.client.db.dbDict[*k] = obj
+	replyRedisAck(req, &ReplyOK)
 }
 
 func cmdGetHandler(req *redisReq) {
 	k := req.client.argv[1]
 	dbMap := req.client.db.dbDict
-	obj, ok := dbMap[k]
+	obj, ok := dbMap[*k]
 	if !ok {
-		replyRedisAck(req.client, &ReplyNullBulk)
+		replyRedisAck(req, &ReplyNullBulk)
 	} else {
-		s, ok := obj.value.(string) //todo
-		if !ok {
-			replyRedisAck(req.client, &ReplyNullBulk) //todo
-		}
-		fmt.Printf("Get k=%s, v=%s\n", k, s)
-		replyRedisAck(req.client, addReplyBulkCString(&s))
+		s := Obj2Str(obj)
+		fmt.Printf("Get k=%s, v=%s\n", *k, *s)
+		replyRedisAck(req, addReplyBulkCString(s))
+	}
+}
+
+func str2Obj(v *string, ttl *time.Time) *redisObj {
+	var obj *redisObj
+	numV, err := strconv.Atoi(*v)
+	if err != nil {
+		obj = &redisObj{ObjString, ObjEncodingStr, v, *ttl}
+	} else {
+		obj = &redisObj{ObjString, ObjEncodingINT, numV, *ttl}
+	}
+
+	return obj
+}
+
+func Obj2Str(obj *redisObj) *string {
+	if obj.encoding == ObjEncodingStr {
+		v, _ := obj.value.(*string)
+		return v
+	} else if obj.encoding == ObjEncodingINT {
+		vNum, _ := obj.value.(int)
+		v := strconv.Itoa(vNum)
+		return &v
+	} else {
+		return nil
 	}
 }

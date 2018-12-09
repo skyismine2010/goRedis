@@ -29,10 +29,12 @@ func activeExpireCycle() {
 			now := time.Now()
 			for k, _ := range server.db[i].expiresDict {
 				loopCount++
+				fmt.Printf("delete key = %s, now = %s, ttl=%s\n", k, time.Now().String(),
+					server.db[i].expiresDict[k].ttl.String())
 				if server.db[i].expiresDict[k].ttl.Before(now) {
 					delete(server.db[i].expiresDict, k)
 					delete(server.db[i].dbDict, k)
-					fmt.Printf("the key=%s is removed.\n", k)
+					//fmt.Printf("the key=%s is removed.\n", k)
 					expireNum++
 				}
 				if loopCount >= ActiveExpireCycleLookupPerLoop {

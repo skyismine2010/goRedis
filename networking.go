@@ -22,15 +22,19 @@ func addReplyCommandFlag(str *string, cmd *redisCommand, cmdFlag int32, cmdFlagS
 		*str += fmt.Sprintf("+%s\r\n", cmdFlagStr)
 		return 1
 	}
-
 	return 0
 }
 
 func replyErrorFormat(req *redisReq, str string, fmtList ...interface{}) {
 	ackStr := fmt.Sprintf("-ERR "+str+"\r\n", fmtList...)
-	replyRedisAck(req.client, &ackStr)
+	replyRedisAck(req, &ackStr)
 }
 
-func replyRedisAck(client *redisClient, ackMsg *string) {
-	client.ackChan <- *ackMsg
+func replyRedisAck(req *redisReq, ackMsg *string) {
+	req.client.ackChan <- *ackMsg
+}
+
+func replyNumerFormat(req *redisReq, num int64) {
+	ackStr := fmt.Sprintf(":%d\r\n", num)
+	replyRedisAck(req, &ackStr)
 }

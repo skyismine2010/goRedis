@@ -20,3 +20,21 @@ func initRedisDb(server *redisServer) error {
 	fmt.Printf("Init Go Redis DB success.\n")
 	return nil
 }
+
+func lookupByKeyOrReply(req *redisReq, key *string, reply *string) *redisObj {
+	v, exist := req.client.db.dbDict[*key]
+	if !exist {
+		replyRedisAck(req, reply)
+		return nil
+	}
+	return v
+}
+
+func lookupByKey(req *redisReq, key *string) *redisObj {
+	v, exist := req.client.db.dbDict[*key]
+	if !exist {
+		return nil
+	}
+	return v
+
+}
