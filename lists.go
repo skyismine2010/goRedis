@@ -6,15 +6,15 @@ import (
 	"time"
 )
 
-const LIST_HEAD = 0
-const LIST_TAIL = 1
+const ListHead = 0
+const ListTail = 1
 
 func cmdLPushHandler(req *redisReq) {
-	cmdPushGenericHandler(req, LIST_HEAD)
+	cmdPushGenericHandler(req, ListHead)
 }
 
 func cmdRPushHandler(req *redisReq) {
-	cmdPushGenericHandler(req, LIST_TAIL)
+	cmdPushGenericHandler(req, ListTail)
 }
 
 func cmdListTypeCheckOrReply(req *redisReq, v *redisObj) *list.List {
@@ -45,7 +45,7 @@ func cmdPushGenericHandler(req *redisReq, where int) {
 
 	var pushed int64
 	for i := 2; i < req.client.argc; i++ {
-		if where == LIST_HEAD {
+		if where == ListHead {
 			vList.PushFront(req.client.argv[i]) //todo 还可以对数字类型进行压缩
 		} else {
 			vList.PushBack(req.client.argv[i])
@@ -136,4 +136,37 @@ func cmdLRangeHandler(req *redisReq) {
 	}
 	replyStr := addReplyMultiBulk(tmpReplyList)
 	replyRedisAck(req, replyStr)
+}
+
+func cmdBLPopHandler(req *redisReq) {
+	cmdBlockingPopGenericHandler(req, ListHead)
+}
+
+func cmdBRPopHandler(req *redisReq) {
+	cmdBlockingPopGenericHandler(req, ListTail)
+}
+
+func cmdLPopHandler(req *redisReq) {
+	cmdPopGenericHandler(req, ListHead)
+}
+
+func cmdRPopHandler(req *redisReq) {
+	cmdPopGenericHandler(req, ListTail)
+}
+
+func cmdPopGenericHandler(req *redisReq, where int) {
+	obj := lookupByKey(req, req.client.argv[1])
+	if obj == nil {
+		replyNumerFormat(req, 0)
+		return
+	}
+	vList := cmdListTypeCheckOrReply(req, obj)
+	if vList == nil {
+		return
+	}
+
+}
+
+func cmdBlockingPopGenericHandler(req *redisReq, where int) {
+
 }

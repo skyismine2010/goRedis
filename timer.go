@@ -22,7 +22,7 @@ func activeExpireCycle() {
 		if len(server.db[i].expiresDict) == 0 {
 			continue
 		}
-
+		//todo: cpu冲高解决
 		for isContinue {
 			expireNum := 0
 			loopCount := 0

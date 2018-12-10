@@ -3,8 +3,9 @@ package goRedis
 import "fmt"
 
 type redisDB struct {
-	dbDict      map[string]*redisObj
-	expiresDict map[string]*redisObj
+	dbDict       map[string]*redisObj
+	expiresDict  map[string]*redisObj
+	blockingKeys map[string]*redisReq
 	//todo 这里需要做的东西还有很多，先暂时这样
 }
 

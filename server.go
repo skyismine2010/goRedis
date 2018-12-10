@@ -106,6 +106,10 @@ func init() {
 		"rpush":   &redisCommand{cmdRPushHandler, 3, "wmF", 1, 1, 1, 0, 0, 0},
 		"llen":    &redisCommand{cmdLLenHandler, 2, "rF", 0, 1, 1, 1, 0, 0},
 		"lrange":  &redisCommand{cmdLRangeHandler, 2, "rF", 0, 1, 1, 1, 0, 0},
+		"blpop":   &redisCommand{cmdBLPopHandler, 2, "ws", 0, 1, 1, 1, 0, 0},
+		"brpop":   &redisCommand{cmdBRPopHandler, 2, "ws", 0, 1, 1, 1, 0, 0},
+		"lpop":    &redisCommand{cmdLPopHandler, 2, "wF", 0, 1, 1, 1, 0, 0},
+		"rpop":    &redisCommand{cmdRPopHandler, 2, "wF", 0, 1, 1, 1, 0, 0},
 	}
 }
 
