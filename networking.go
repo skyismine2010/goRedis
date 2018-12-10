@@ -12,6 +12,14 @@ func addReplyBulkCString(subStr *string) *string {
 	return &ret
 }
 
+func addReplyMultiBulk(l []*string) *string {
+	ret := fmt.Sprintf("*%d\r\n", len(l))
+	for _, v := range l {
+		ret += fmt.Sprintf("$%d\r\n%s\r\n", len(*v), *v)
+	}
+	return &ret
+}
+
 func addReplyInt64(length int64) *string {
 	ret := fmt.Sprintf(":%d\r\n", length)
 	return &ret
