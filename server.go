@@ -97,6 +97,7 @@ var ReplyWrongTypeErr = "-WRONGTYPE Operation against a key holding the wrong ki
 
 var redisCommandTable map[string]*redisCommand
 
+//arity 是负数的意思是必须大于等于 abs(arity)
 func init() {
 	redisCommandTable = map[string]*redisCommand{
 		"command": &redisCommand{cmdCommandHandler, 0, "ltR", 1, 1, 1, 0, 0, 0},
@@ -110,6 +111,7 @@ func init() {
 		"brpop":   &redisCommand{cmdBRPopHandler, 2, "ws", 0, 1, 1, 1, 0, 0},
 		"lpop":    &redisCommand{cmdLPopHandler, 2, "wF", 0, 1, 1, 1, 0, 0},
 		"rpop":    &redisCommand{cmdRPopHandler, 2, "wF", 0, 1, 1, 1, 0, 0},
+		"hmset":   &redisCommand{cmdHmSetHandler, -4, "wmF", 0, 1, 1, 1, 0, 0},
 	}
 }
 
@@ -163,7 +165,7 @@ func sendClientAck(client *redisClient, s string) error {
 }
 
 func initClient(conn net.Conn, client *redisClient) {
-	client.ackChan = make(chan string) // 阻塞式chan
+	client.ackChan = make(chan string, 1024) // 阻塞式chan不合理，对于pipe的场景处理有问题
 	client.addrInfo = conn.RemoteAddr().String()
 	client.createTime = time.Now()
 	client.scanner = bufio.NewScanner(conn)
@@ -182,7 +184,11 @@ func clientConnHandler(conn net.Conn) {
 			fmt.Printf("error receivce message, err=%v, client.argc=%d", err, client.argc)
 			return
 		}
-		//fmt.Printf("redis client receive argc  = %d, argv=%v client = %v\n", client.argc, client.argv, conn.RemoteAddr())
+		fmt.Printf("redis client receive argc  = %d, client = %s, argv=\n", client.argc, conn.RemoteAddr())
+		for _, str := range client.argv {
+			fmt.Printf("%s,", *str)
+		}
+		fmt.Printf("\n")
 
 		sendReqToRedisServer(&client)
 
@@ -338,7 +344,9 @@ func serverMsgHandler(req *redisReq) {
 		return
 	}
 	req.client.cmd = cmd
-	if req.client.cmd.arity > req.client.argc {
+
+	if (req.client.cmd.arity > 0 && req.client.cmd.arity != req.client.argc) ||
+		(req.client.argc < -1*(req.client.cmd.arity)) {
 		replyErrorFormat(req, "-wrong number of arguments for '%s' command",
 			cmdName)
 		return

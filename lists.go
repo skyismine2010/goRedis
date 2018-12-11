@@ -17,12 +17,12 @@ func cmdRPushHandler(req *redisReq) {
 	cmdPushGenericHandler(req, ListTail)
 }
 
-func cmdListTypeCheckOrReply(req *redisReq, v *redisObj) *list.List {
-	if v.rType != ObjList || v.encoding != ObjEncodingList {
+func cmdListTypeCheckOrReply(req *redisReq, obj *redisObj) *list.List {
+	if obj.rType != ObjList || obj.encoding != ObjEncodingList {
 		replyRedisAck(req, &ReplyWrongTypeErr)
 		return nil
 	}
-	vList, ok := v.value.(*list.List)
+	vList, ok := obj.value.(*list.List)
 	if !ok {
 		panic("can't convert to list type")
 	}
@@ -164,7 +164,6 @@ func cmdPopGenericHandler(req *redisReq, where int) {
 	if vList == nil {
 		return
 	}
-
 }
 
 func cmdBlockingPopGenericHandler(req *redisReq, where int) {
