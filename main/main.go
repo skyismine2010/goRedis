@@ -11,5 +11,6 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:50500", nil))
 	}()
+
 	goRedis.StartServer()
 }

@@ -2,6 +2,7 @@ package goRedis
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 )
@@ -76,7 +77,7 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	now := time.Now()
 
 	ttl := now.Add(time.Duration(expire) * time.Millisecond)
-	fmt.Printf("set key = %s, now = %s, ttl=%s\n", k, time.Now().String(), ttl.String())
+	log.Printf("set key = %s, now = %s, ttl=%s\n", k, time.Now().String(), ttl.String())
 
 	obj := str2Obj(v, &ttl)
 

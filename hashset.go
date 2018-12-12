@@ -1,6 +1,9 @@
 package goRedis
 
-import "time"
+import (
+	"log"
+	"time"
+)
 
 func cmdDictTypeCheckOrReply(req *redisReq, obj *redisObj) map[*string]*string {
 	if obj.rType != ObjHash || obj.encoding != ObjEncodingHT {
@@ -15,6 +18,7 @@ func cmdDictTypeCheckOrReply(req *redisReq, obj *redisObj) map[*string]*string {
 }
 
 func cmdHmSetHandler(req *redisReq) {
+	log.Printf("goRedis server begin handler hmset msg\n")
 	if req.argc%2 == 1 {
 		replyErrorFormat(req, "wrong number of arguments for HMSET")
 		return
@@ -38,7 +42,7 @@ func cmdHmSetHandler(req *redisReq) {
 	}
 
 	replyRedisAck(req, &ReplyOK)
-
+	log.Printf("goRedis server end handler hmset msg\n")
 }
 
 func cmdHmGetAllHandler(req *redisReq) {

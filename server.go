@@ -3,7 +3,9 @@ package goRedis
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -122,12 +124,14 @@ func receiveClientReq(client *redisClient) (*redisReq, error) {
 	if client.scanner.Scan() {
 		text := client.scanner.Text()
 		if text[0] != '*' {
-			return nil, fmt.Errorf("Client Format Error.")
+			return nil, fmt.Errorf("client format error.")
 		}
 		req.argc, err = strconv.Atoi(text[1:])
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		return nil, nil //return asap
 	}
 
 	frameLen := 0
@@ -160,12 +164,21 @@ func receiveClientReq(client *redisClient) (*redisReq, error) {
 
 func sendClientAck(client *redisClient, s string) error {
 	if _, err := client.writer.Write([]byte(s)); err != nil {
-		fmt.Printf("send redis ack to client failed, err=%v\n", err)
+		log.Printf("send redis ack to client failed, err=%v\n", err)
 		return err
 	}
-	fmt.Printf("send redis ack to client success ,ack = %s", s)
+	log.Printf("send redis ack to client success ,ack = %s", s)
 	client.writer.Flush()
 	return nil
+}
+
+func nonEmptySplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	advance, token, err = bufio.ScanLines(data, atEOF)
+	if len(token) == 0 {
+		return 0, nil, nil
+	}
+	return advance, token, err
+
 }
 
 func initClient(conn net.Conn, client *redisClient) {
@@ -173,6 +186,7 @@ func initClient(conn net.Conn, client *redisClient) {
 	client.addrInfo = conn.RemoteAddr().String()
 	client.createTime = time.Now()
 	client.scanner = bufio.NewScanner(conn)
+	client.scanner.Split(nonEmptySplit)
 	client.writer = bufio.NewWriter(conn)
 	client.db = &server.db[0] //和redis的实现暂时保持一致
 }
@@ -184,22 +198,29 @@ func clientConnHandler(conn net.Conn) {
 	initClient(conn, &client)
 	for {
 		req, err := receiveClientReq(&client)
-		if err != nil || req.argc != len(req.argv) {
-			fmt.Printf("error receivce message, err=%v, client.argc=%d", err, req.argc)
+		if err != nil {
+			log.Printf("error receive message, err=%v, client.argc=%d", err, req.argc)
 			return
 		}
 
-		if req.argc > 0 && req.argc == len(req.argv) {
-			sendReqToRedisServer(req)
+		if req != nil {
+			if req.argc == 0 || req.argc != len(req.argv) {
+				sendClientAck(&client, ReplyErr)
+				return
+			} else {
+				log.Printf("receive client req. argc=%d.", req.argc)
+				sendReqToRedisServer(req)
+			}
 		}
 
 		var ackStr string
+		runtime.Gosched()
 		recvAckFromRedisServer(&client, &ackStr)
 
 		if len(ackStr) != 0 {
 			err = sendClientAck(&client, ackStr)
 			if err != nil {
-				fmt.Printf("error send mesaage err=%v", err)
+				log.Printf("error send mesaage err=%v", err)
 				return
 			}
 		}
@@ -209,10 +230,10 @@ func clientConnHandler(conn net.Conn) {
 func recvAckFromRedisServer(client *redisClient, ack *string) {
 	select {
 	case *ack = <-client.ackChan:
-		return
-	default:
+		log.Printf("goRedis client receive server ack msg = %s", *ack)
 		return
 	}
+	log.Printf("go here isn't possible")
 }
 
 func sendReqToRedisServer(req *redisReq) {
@@ -224,17 +245,17 @@ func listenAndServe(ip string, port int) error {
 
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 
 	for true {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("can't accept client socket, err=%v", err)
+			log.Println("can't accept client socket, err=%v", err)
 			continue
 		}
-		fmt.Printf("accept conn, remote info = %v\n", conn.RemoteAddr())
+		log.Printf("accept conn, remote info = %v\n", conn.RemoteAddr())
 		go clientConnHandler(conn)
 	}
 
@@ -255,7 +276,6 @@ func cmdCommandHandler(req *redisReq) {
 		ackStr += *(addReplyInt64(int64(cmd.lastKey)))
 		ackStr += *(addReplyInt64(int64(cmd.keyStep)))
 	}
-	fmt.Printf("Send [Command] Ack = %s", ackStr)
 	replyRedisAck(req, &ackStr)
 }
 
@@ -317,7 +337,13 @@ func initRedisCmdTable() error {
 	return nil
 }
 
+func initLog() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
+	log.Printf("init log ok ...")
+}
+
 func initServer() error {
+	initLog()
 	server.reqChan = make(chan *redisReq, 2048)
 	if err := initRedisCmdTable(); err != nil {
 		return err
@@ -342,6 +368,7 @@ func serverMainLoop() {
 
 func serverMsgHandler(req *redisReq) {
 	cmdName := strings.ToLower(*req.argv[0])
+	log.Printf("goRedis server receive msg = %s\n", cmdName)
 	cmd, ok := redisCommandTable[cmdName]
 	if !ok {
 		replyErrorFormat(req, "unknown command `%s`", cmdName)
@@ -362,7 +389,7 @@ func serverMsgHandler(req *redisReq) {
 func StartServer() {
 	err := initServer()
 	if err != nil {
-		fmt.Printf("init Server failed. err = %v\n", err)
+		log.Printf("init Server failed. err = %v\n", err)
 		return
 	}
 	go serverMainLoop()
