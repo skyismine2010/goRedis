@@ -16,13 +16,13 @@ func cmdSetHandler(req *redisReq) {
 	var expire *string
 	flags := ObjSetNoFlags
 
-	for i := 3; i < req.client.argc; i++ {
+	for i := 3; i < req.argc; i++ {
 		var a, next *string
-		a = req.client.argv[i]
-		if i == req.client.argc-1 {
+		a = req.argv[i]
+		if i == req.argc-1 {
 			next = nil
 		} else {
-			next = req.client.argv[i+1]
+			next = req.argv[i+1]
 		}
 		if ((*a)[0] == 'n' || (*a)[0] == 'N') &&
 			((*a)[1] == 'x' || (*a)[1] == 'X') &&
@@ -58,14 +58,14 @@ func cmdSetHandler(req *redisReq) {
 func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	var expire int
 	var err error
-	k := req.client.argv[1]
-	v := req.client.argv[2]
+	k := req.argv[1]
+	v := req.argv[2]
 	//fmt.Printf("Set k=%s, v=%s\n", k, v)
 
 	if expireStr != nil {
 		expire, err = strconv.Atoi(*expireStr)
 		if err != nil {
-			replyErrorFormat(req, "invalid expire time in %s", req.client.argv[0])
+			replyErrorFormat(req, "invalid expire time in %s", req.argv[0])
 			return
 		}
 
@@ -80,7 +80,7 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 
 	obj := str2Obj(v, &ttl)
 
-	_, exist := req.client.db.dbDict[*k]
+	_, exist := req.db.dbDict[*k]
 	if (exist && (flags&ObjSetNX) != 0) ||
 		(!exist && (flags&ObjSetXX) != 0) {
 		replyRedisAck(req, &ReplyNullBulk)
@@ -88,15 +88,15 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	}
 
 	if expireStr != nil {
-		req.client.db.expiresDict[*k] = obj
+		req.db.expiresDict[*k] = obj
 	}
-	req.client.db.dbDict[*k] = obj
+	req.db.dbDict[*k] = obj
 	replyRedisAck(req, &ReplyOK)
 }
 
 func cmdGetHandler(req *redisReq) {
-	k := req.client.argv[1]
-	dbMap := req.client.db.dbDict
+	k := req.argv[1]
+	dbMap := req.db.dbDict
 	obj, ok := dbMap[*k]
 	if !ok {
 		replyRedisAck(req, &ReplyNullBulk)

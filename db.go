@@ -23,7 +23,7 @@ func initRedisDb(server *redisServer) error {
 }
 
 func lookupByKeyOrReply(req *redisReq, key *string, reply *string) *redisObj {
-	v, exist := req.client.db.dbDict[*key]
+	v, exist := req.db.dbDict[*key]
 	if !exist {
 		replyRedisAck(req, reply)
 		return nil
@@ -32,7 +32,7 @@ func lookupByKeyOrReply(req *redisReq, key *string, reply *string) *redisObj {
 }
 
 func lookupByKey(req *redisReq, key *string) *redisObj {
-	v, exist := req.client.db.dbDict[*key]
+	v, exist := req.db.dbDict[*key]
 	if !exist {
 		return nil
 	}

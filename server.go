@@ -13,18 +13,18 @@ type redisClient struct {
 	createTime      time.Time //todo
 	addrInfo        string
 	db              *redisDB // 当前使用的db
-	cmd             *redisCommand
 	lastInterAction time.Duration
 	ackChan         chan string
-	argc            int
-	argv            []*string
-	conn            net.Conn
 	scanner         *bufio.Scanner
 	writer          *bufio.Writer
 }
 
 type redisReq struct {
-	client *redisClient
+	ackChan chan string
+	db      *redisDB
+	cmd     *redisCommand
+	argc    int
+	argv    []*string
 }
 
 type cmdProcess func(req *redisReq)
@@ -115,44 +115,47 @@ func init() {
 	}
 }
 
-func receiveClientReq(client *redisClient) error {
+func receiveClientReq(client *redisClient) (*redisReq, error) {
 	var err error
+	var req redisReq
 
 	if client.scanner.Scan() {
 		text := client.scanner.Text()
 		if text[0] != '*' {
-			return fmt.Errorf("Client Format Error.")
+			return nil, fmt.Errorf("Client Format Error.")
 		}
-		client.argc, err = strconv.Atoi(text[1:])
+		req.argc, err = strconv.Atoi(text[1:])
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	frameLen := 0
 
-	for i := 0; i < client.argc*2; i++ {
+	for i := 0; i < req.argc*2; i++ {
 		if client.scanner.Scan() {
 			text := client.scanner.Text()
 			if i%2 == 0 {
 				if text[0] != '$' {
-					return fmt.Errorf("client format error. text=%s", text)
+					return nil, fmt.Errorf("client format error. text=%s", text)
 				}
 				frameLen, err = strconv.Atoi(text[1:])
 				if err != nil {
-					return fmt.Errorf("client format error, text=%s", text)
+					return nil, fmt.Errorf("client format error, text=%s", text)
 				}
 			} else {
-				if frameLen == 0 || len(text) != frameLen {
-					return fmt.Errorf("client format error, text=%s", text)
+				if len(text) != frameLen {
+					return nil, fmt.Errorf("client format error, text=%s", text)
 				} else {
-					client.argv = append(client.argv, &text)
+					req.argv = append(req.argv, &text)
 				}
 				frameLen = 0
 			}
 		}
 	}
-	return nil
+	req.db = client.db
+	req.ackChan = client.ackChan
+	return &req, nil
 }
 
 func sendClientAck(client *redisClient, s string) error {
@@ -160,12 +163,13 @@ func sendClientAck(client *redisClient, s string) error {
 		fmt.Printf("send redis ack to client failed, err=%v\n", err)
 		return err
 	}
+	fmt.Printf("send redis ack to client success ,ack = %s", s)
 	client.writer.Flush()
 	return nil
 }
 
 func initClient(conn net.Conn, client *redisClient) {
-	client.ackChan = make(chan string, 1024) // 阻塞式chan不合理，对于pipe的场景处理有问题
+	client.ackChan = make(chan string, 1024) // 阻塞式chan不合理，对于pipe的场景处理有问题，所以改成非阻塞
 	client.addrInfo = conn.RemoteAddr().String()
 	client.createTime = time.Now()
 	client.scanner = bufio.NewScanner(conn)
@@ -179,40 +183,40 @@ func clientConnHandler(conn net.Conn) {
 	var client redisClient
 	initClient(conn, &client)
 	for {
-		err := receiveClientReq(&client)
-		if err != nil || client.argc == 0 || client.argc != len(client.argv) {
-			fmt.Printf("error receivce message, err=%v, client.argc=%d", err, client.argc)
-			return
-		}
-		fmt.Printf("redis client receive argc  = %d, client = %s, argv=\n", client.argc, conn.RemoteAddr())
-		for _, str := range client.argv {
-			fmt.Printf("%s,", *str)
-		}
-		fmt.Printf("\n")
-
-		sendReqToRedisServer(&client)
-
-		ack := recvAckFromRedisServer(&client)
-
-		err = sendClientAck(&client, ack)
-		if err != nil {
-			fmt.Printf("error send mesaage err=%v", err)
+		req, err := receiveClientReq(&client)
+		if err != nil || req.argc != len(req.argv) {
+			fmt.Printf("error receivce message, err=%v, client.argc=%d", err, req.argc)
 			return
 		}
 
-		client.argc = 0
-		client.argv = nil
+		if req.argc > 0 && req.argc == len(req.argv) {
+			sendReqToRedisServer(req)
+		}
+
+		var ackStr string
+		recvAckFromRedisServer(&client, &ackStr)
+
+		if len(ackStr) != 0 {
+			err = sendClientAck(&client, ackStr)
+			if err != nil {
+				fmt.Printf("error send mesaage err=%v", err)
+				return
+			}
+		}
 	}
 }
 
-func recvAckFromRedisServer(client *redisClient) string {
-	ack := <-client.ackChan
-	return ack
+func recvAckFromRedisServer(client *redisClient, ack *string) {
+	select {
+	case *ack = <-client.ackChan:
+		return
+	default:
+		return
+	}
 }
 
-func sendReqToRedisServer(client *redisClient) {
-	req := redisReq{client}
-	server.reqChan <- &req //因为有buffer，所以是一个非阻塞的操作
+func sendReqToRedisServer(req *redisReq) {
+	server.reqChan <- req //因为有buffer，所以是一个非阻塞的操作
 }
 
 func listenAndServe(ip string, port int) error {
@@ -337,16 +341,16 @@ func serverMainLoop() {
 }
 
 func serverMsgHandler(req *redisReq) {
-	cmdName := strings.ToLower(*req.client.argv[0])
+	cmdName := strings.ToLower(*req.argv[0])
 	cmd, ok := redisCommandTable[cmdName]
 	if !ok {
 		replyErrorFormat(req, "unknown command `%s`", cmdName)
 		return
 	}
-	req.client.cmd = cmd
+	req.cmd = cmd
 
-	if (req.client.cmd.arity > 0 && req.client.cmd.arity != req.client.argc) ||
-		(req.client.argc < -1*(req.client.cmd.arity)) {
+	if (req.cmd.arity > 0 && req.cmd.arity != req.argc) ||
+		(req.argc < -1*(req.cmd.arity)) {
 		replyErrorFormat(req, "-wrong number of arguments for '%s' command",
 			cmdName)
 		return

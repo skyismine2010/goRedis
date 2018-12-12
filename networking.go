@@ -39,7 +39,7 @@ func replyErrorFormat(req *redisReq, str string, fmtList ...interface{}) {
 }
 
 func replyRedisAck(req *redisReq, ackMsg *string) {
-	req.client.ackChan <- *ackMsg
+	req.ackChan <- *ackMsg
 }
 
 func replyNumerFormat(req *redisReq, num int64) {

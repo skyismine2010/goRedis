@@ -31,7 +31,7 @@ func cmdListTypeCheckOrReply(req *redisReq, obj *redisObj) *list.List {
 
 func cmdPushGenericHandler(req *redisReq, where int) {
 	var vList *list.List
-	k := req.client.argv[1]
+	k := req.argv[1]
 	obj := lookupByKey(req, k)
 	if obj == nil {
 		vList = list.New()
@@ -44,20 +44,20 @@ func cmdPushGenericHandler(req *redisReq, where int) {
 	}
 
 	var pushed int64
-	for i := 2; i < req.client.argc; i++ {
+	for i := 2; i < req.argc; i++ {
 		if where == ListHead {
-			vList.PushFront(req.client.argv[i]) //todo 还可以对数字类型进行压缩
+			vList.PushFront(req.argv[i]) //todo 还可以对数字类型进行压缩
 		} else {
-			vList.PushBack(req.client.argv[i])
+			vList.PushBack(req.argv[i])
 		}
 		pushed++
 	}
-	req.client.db.dbDict[*k] = obj
+	req.db.dbDict[*k] = obj
 	replyNumerFormat(req, int64(vList.Len()))
 }
 
 func cmdLLenHandler(req *redisReq) {
-	obj := lookupByKey(req, req.client.argv[1])
+	obj := lookupByKey(req, req.argv[1])
 	if obj == nil {
 		replyNumerFormat(req, 0)
 		return
@@ -79,7 +79,7 @@ func cmdListIteratorByIdx(vList *list.List, idx int) *list.Element {
 }
 
 func cmdLRangeHandler(req *redisReq) {
-	k := req.client.argv[1]
+	k := req.argv[1]
 	obj := lookupByKeyOrReply(req, k, &ReplyEmptyMultiBulk)
 	if obj == nil {
 		return
@@ -93,12 +93,12 @@ func cmdLRangeHandler(req *redisReq) {
 	}
 
 	lLen := vList.Len()
-	start, err := strconv.Atoi(*(req.client.argv[2]))
+	start, err := strconv.Atoi(*(req.argv[2]))
 	if err != nil {
 		replyErrorFormat(req, "value is not an integer or out of range")
 		return
 	}
-	end, err := strconv.Atoi(*(req.client.argv[3]))
+	end, err := strconv.Atoi(*(req.argv[3]))
 	if err != nil {
 		replyErrorFormat(req, "value is not an integer or out of range")
 		return
@@ -155,7 +155,7 @@ func cmdRPopHandler(req *redisReq) {
 }
 
 func cmdPopGenericHandler(req *redisReq, where int) {
-	obj := lookupByKey(req, req.client.argv[1])
+	obj := lookupByKey(req, req.argv[1])
 	if obj == nil {
 		replyNumerFormat(req, 0)
 		return
