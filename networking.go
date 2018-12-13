@@ -1,6 +1,8 @@
 package goRedis
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func addReplyMultiBulkLen(length int64) *string {
 	ret := fmt.Sprintf("*%d\r\n", length)
@@ -39,7 +41,9 @@ func replyErrorFormat(req *redisReq, str string, fmtList ...interface{}) {
 }
 
 func replyRedisAck(req *redisReq, ackMsg *string) {
-	req.ackChan <- *ackMsg
+	//	log.Printf("send ack=%s to client", *ackMsg)
+	req.clientChan <- *ackMsg
+	//	log.Printf("send ack=%s to client finish", *ackMsg)
 }
 
 func replyNumerFormat(req *redisReq, num int64) {

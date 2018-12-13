@@ -32,7 +32,7 @@ func cmdListTypeCheckOrReply(req *redisReq, obj *redisObj) *list.List {
 func cmdPushGenericHandler(req *redisReq, where int) {
 	var vList *list.List
 	k := req.argv[1]
-	obj := lookupByKey(req, k)
+	obj := lookupByKey(req, &k)
 	if obj == nil {
 		vList = list.New()
 		obj = &redisObj{ObjList, ObjEncodingList, vList, time.Now()}
@@ -52,12 +52,12 @@ func cmdPushGenericHandler(req *redisReq, where int) {
 		}
 		pushed++
 	}
-	req.db.dbDict[*k] = obj
+	req.db.dbDict[k] = obj
 	replyNumerFormat(req, int64(vList.Len()))
 }
 
 func cmdLLenHandler(req *redisReq) {
-	obj := lookupByKey(req, req.argv[1])
+	obj := lookupByKey(req, &req.argv[1])
 	if obj == nil {
 		replyNumerFormat(req, 0)
 		return
@@ -80,7 +80,7 @@ func cmdListIteratorByIdx(vList *list.List, idx int) *list.Element {
 
 func cmdLRangeHandler(req *redisReq) {
 	k := req.argv[1]
-	obj := lookupByKeyOrReply(req, k, &ReplyEmptyMultiBulk)
+	obj := lookupByKeyOrReply(req, &k, &ReplyEmptyMultiBulk)
 	if obj == nil {
 		return
 	}
@@ -93,12 +93,12 @@ func cmdLRangeHandler(req *redisReq) {
 	}
 
 	lLen := vList.Len()
-	start, err := strconv.Atoi(*(req.argv[2]))
+	start, err := strconv.Atoi(req.argv[2])
 	if err != nil {
 		replyErrorFormat(req, "value is not an integer or out of range")
 		return
 	}
-	end, err := strconv.Atoi(*(req.argv[3]))
+	end, err := strconv.Atoi(req.argv[3])
 	if err != nil {
 		replyErrorFormat(req, "value is not an integer or out of range")
 		return
@@ -155,7 +155,7 @@ func cmdRPopHandler(req *redisReq) {
 }
 
 func cmdPopGenericHandler(req *redisReq, where int) {
-	obj := lookupByKey(req, req.argv[1])
+	obj := lookupByKey(req, &req.argv[1])
 	if obj == nil {
 		replyNumerFormat(req, 0)
 		return

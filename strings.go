@@ -19,11 +19,11 @@ func cmdSetHandler(req *redisReq) {
 
 	for i := 3; i < req.argc; i++ {
 		var a, next *string
-		a = req.argv[i]
+		a = &req.argv[i]
 		if i == req.argc-1 {
 			next = nil
 		} else {
-			next = req.argv[i+1]
+			next = &req.argv[i+1]
 		}
 		if ((*a)[0] == 'n' || (*a)[0] == 'N') &&
 			((*a)[1] == 'x' || (*a)[1] == 'X') &&
@@ -79,9 +79,9 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	ttl := now.Add(time.Duration(expire) * time.Millisecond)
 	log.Printf("set key = %s, now = %s, ttl=%s\n", k, time.Now().String(), ttl.String())
 
-	obj := str2Obj(v, &ttl)
+	obj := str2Obj(&v, &ttl)
 
-	_, exist := req.db.dbDict[*k]
+	_, exist := req.db.dbDict[k]
 	if (exist && (flags&ObjSetNX) != 0) ||
 		(!exist && (flags&ObjSetXX) != 0) {
 		replyRedisAck(req, &ReplyNullBulk)
@@ -89,21 +89,21 @@ func cmdSetCommonHandler(req *redisReq, expireStr *string, flags int8) {
 	}
 
 	if expireStr != nil {
-		req.db.expiresDict[*k] = obj
+		req.db.expiresDict[k] = obj
 	}
-	req.db.dbDict[*k] = obj
+	req.db.dbDict[k] = obj
 	replyRedisAck(req, &ReplyOK)
 }
 
 func cmdGetHandler(req *redisReq) {
 	k := req.argv[1]
 	dbMap := req.db.dbDict
-	obj, ok := dbMap[*k]
+	obj, ok := dbMap[k]
 	if !ok {
 		replyRedisAck(req, &ReplyNullBulk)
 	} else {
 		s := Obj2Str(obj)
-		fmt.Printf("Get k=%s, v=%s\n", *k, *s)
+		fmt.Printf("Get k=%s, v=%s\n", k, s)
 		replyRedisAck(req, addReplyBulkCString(s))
 	}
 }
