@@ -137,7 +137,8 @@ func receiveClientReq(client *redisClient) (*redisReq, error) {
 			return nil, err
 		}
 	} else {
-		return nil, nil //return asap
+		time.Sleep(10 * time.Millisecond)
+		return nil, nil
 	}
 
 	frameLen := 0
@@ -231,8 +232,6 @@ func clientConnHandler(conn net.Conn) {
 				log.Printf("Write failed. conn.close")
 			}
 			return
-		default:
-			continue
 		}
 	}
 }

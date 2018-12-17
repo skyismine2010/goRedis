@@ -9,7 +9,7 @@ import (
 
 func main() {
 	go func() {
-		log.Println(http.ListenAndServe("localhost:50500", nil))
+		log.Println(http.ListenAndServe("localhost:50501", nil))
 	}()
 
 	goRedis.StartServer()
